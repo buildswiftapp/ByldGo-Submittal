@@ -64,7 +64,10 @@ export async function submitReview(_prevState: unknown, formData: FormData) {
       const statusLabel =
         newStatus === "approved" ? "approved" : "needs revision";
       try {
-        await resend.emails.send({
+        // See the note in dashboard/actions.ts: Resend resolves with an
+        // `error` field on API-level failures rather than throwing, so
+        // that has to be checked explicitly, not just try/caught.
+        const { error: sendError } = await resend.emails.send({
           from: EMAIL_FROM,
           to: ownerEmail,
           subject: `Update on submittal ${submittal.name}`,
@@ -72,10 +75,15 @@ export async function submitReview(_prevState: unknown, formData: FormData) {
             comments || "(none)"
           }`,
         });
-      } catch {
+        if (sendError) {
+          console.error("Resend failed to notify the owner:", sendError);
+        }
+      } catch (err) {
         // The status update already succeeded either way — an email
         // hiccup here shouldn't make the reviewer think their review
-        // didn't go through.
+        // didn't go through. Logged server-side so it's visible while
+        // testing locally.
+        console.error("Resend threw while notifying the owner:", err);
       }
     }
   }

@@ -113,12 +113,22 @@ export async function sendForReview(_prevState: unknown, formData: FormData) {
   if (submittal.reviewer_email && resend) {
     const reviewLink = `${SITE_URL}/review/${submittal.review_token}`;
     try {
-      await resend.emails.send({
+      // IMPORTANT: the Resend SDK does NOT throw for an API-level failure
+      // (e.g. an unverified "from" domain) — it resolves normally with
+      // an `error` field instead. Missing this check was a bug: it made
+      // failed sends look like they'd succeeded.
+      const { error: sendError } = await resend.emails.send({
         from: EMAIL_FROM,
         to: submittal.reviewer_email,
         subject: `Submittal package for review: ${submittal.name}`,
         text: `A submittal package is requested for ${submittal.name}. Review it here: ${reviewLink}`,
       });
+      if (sendError) {
+        revalidatePath("/dashboard");
+        return {
+          error: `Marked as sent for review, but the reviewer email failed to send: ${sendError.message}`,
+        };
+      }
     } catch (err) {
       // The status change already succeeded — surface the email problem
       // without pretending the whole action failed.

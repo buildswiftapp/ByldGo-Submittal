@@ -10,8 +10,13 @@ export const resend = process.env.RESEND_API_KEY
 // onboarding@resend.dev works out of the box for testing, before you've
 // verified your own sending domain in Resend. Once you have, set
 // RESEND_FROM_EMAIL to something like "ByldGo Submittals <notify@byldgo.com>".
+//
+// NOTE: `||` here on purpose, not `??` — an env var left blank in .env.local
+// (RESEND_FROM_EMAIL=) comes through as an empty string, not undefined, and
+// `??` only falls back on undefined/null. An empty string slipped through
+// as the "from" address and Resend rejected it as an invalid domain.
 export const EMAIL_FROM =
-  process.env.RESEND_FROM_EMAIL ?? "ByldGo Submittals <onboarding@resend.dev>";
+  process.env.RESEND_FROM_EMAIL || "ByldGo Submittals <onboarding@resend.dev>";
 
 export const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
