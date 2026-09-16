@@ -127,6 +127,19 @@ and the public review page that actually use this schema.
    summarizing the decision → confirm the submittal now shows
    "Approved" with your comment in the dashboard.
 
+**✅ Tested and confirmed working end-to-end (9/16/2026).** Two things
+worth remembering from testing this:
+
+- Leaving `RESEND_FROM_EMAIL` blank in `.env.local` had a bug — a blank
+  value still isn't the same as "not set" to the app, so it tried
+  sending from an empty address and Resend rejected it. Fixed in
+  `src/lib/resend.ts`; leaving it blank now correctly falls back to
+  `onboarding@resend.dev`.
+- While using that fallback `onboarding@resend.dev` sender (before you
+  verify your own domain), test emails may land in **spam** — that's
+  normal for a shared sandbox address, not a bug. It'll stop once you
+  verify `byldgo.com` in Resend and send from a real address on it.
+
 ## Step 4 — Basic AI spec Q&A — not started
 
 ## Step 5 — Full split-screen AI Specification Analysis Portal — not started
