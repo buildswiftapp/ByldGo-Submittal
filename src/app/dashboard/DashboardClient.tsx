@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { createSubmittal } from "./actions";
 
@@ -159,9 +159,11 @@ export default function DashboardClient({
 function NewSubmittalModal({ onClose }: { onClose: () => void }) {
   const [state, formAction, pending] = useActionState(createSubmittal, null);
 
-  if (state?.success) {
-    onClose();
-  }
+  useEffect(() => {
+    if (state?.success) {
+      onClose();
+    }
+  }, [state?.success, onClose]);
 
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 px-4">
