@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { createSubmittal } from "./actions";
+import { createSubmittal, sendForReview } from "./actions";
 
 export type Submittal = {
   id: string;
@@ -12,6 +12,7 @@ export type Submittal = {
   subcontractor_name: string | null;
   reviewer_name: string | null;
   reviewer_email: string | null;
+  reviewer_comments: string | null;
   file_path: string | null;
   review_token: string;
   created_at: string;
@@ -289,13 +290,22 @@ function DetailPanel({
           <span className="mb-1 block text-xs uppercase text-gray-400">
             Status
           </span>
-          <StatusBadge status={submittal.status} />
+          <div className="flex items-center gap-3">
+            <StatusBadge status={submittal.status} />
+            {submittal.status === "draft" && (
+              <SendForReviewButton
+                submittalId={submittal.id}
+                hasReviewerEmail={!!submittal.reviewer_email}
+              />
+            )}
+          </div>
         </div>
 
         <Row label="Project" value={submittal.project_title} />
         <Row label="Subcontractor / trade" value={submittal.subcontractor_name} />
         <Row label="Reviewer" value={submittal.reviewer_name} />
         <Row label="Reviewer email" value={submittal.reviewer_email} />
+        <Row label="Reviewer comments" value={submittal.reviewer_comments} />
         <Row
           label="Created"
           value={new Date(submittal.created_at).toLocaleString()}
@@ -354,6 +364,43 @@ function DetailPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+function SendForReviewButton({
+  submittalId,
+  hasReviewerEmail,
+}: {
+  submittalId: string;
+  hasReviewerEmail: boolean;
+}) {
+  const [state, formAction, pending] = useActionState(sendForReview, null);
+
+  if (state?.success) {
+    return (
+      <span className="text-xs text-green-700">Sent for review ✓</span>
+    );
+  }
+
+  return (
+    <form action={formAction} className="flex items-center gap-2">
+      <input type="hidden" name="submittalId" value={submittalId} />
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        title={
+          hasReviewerEmail
+            ? undefined
+            : "No reviewer email on file — status will still update, but no email will be sent."
+        }
+      >
+        {pending ? "Sending..." : "Send for Review"}
+      </button>
+      {state?.error && (
+        <span className="text-xs text-red-600">{state.error}</span>
+      )}
+    </form>
   );
 }
 

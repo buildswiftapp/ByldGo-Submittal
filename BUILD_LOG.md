@@ -87,9 +87,45 @@ and the public review page that actually use this schema.
    Configuration, you may want to double check the "Site URL" is set —
    this controls where confirmation emails send people.
 
-## Step 3 — Status workflow + email — not started
+## Step 3 — Status workflow + email ✅ done
 
-## Step 3 — Status workflow + email — not started
+**What was built:**
+
+- **"Send for Review" button** — new, on a draft submittal's detail panel.
+  Moves its status from Draft to Pending Review and, if a reviewer email
+  is on file, emails them their no-login review link. (This step didn't
+  exist yet — Step 2 built the reviewer page, but nothing yet moved a
+  submittal into "awaiting review." This button is that missing piece.)
+- **Approve / Request Revision now actually work** on the public
+  `/review/[review_token]` page — clicking one updates the submittal's
+  status (approved / needs_revision), saves whatever the reviewer typed
+  into Reviewer Comments (now visible in your detail panel too), and
+  emails you a summary. A submittal can only be acted on once while it's
+  "Pending Review" — the button won't do anything on an already-decided
+  submittal, so a reviewer can't double-submit or someone can't reuse an
+  old link to change a decision.
+- **Email delivery via Resend** (`src/lib/resend.ts`). If you haven't
+  set up a Resend account yet, nothing breaks — emails are just silently
+  skipped, and the status changes still work normally.
+
+**What you should check before the next step:**
+
+1. Run `supabase/migrations/0003_reviewer_comments.sql` in the Supabase
+   SQL Editor (adds the column that stores what the reviewer typed).
+2. Sign up for a free account at **resend.com**, create an API key, and
+   add it to `.env.local` as `RESEND_API_KEY=re_...`. For quick testing
+   before you verify your own domain, Resend only delivers to the email
+   address on your Resend account — that's a Resend limitation, not a
+   bug here. Once you verify a sending domain in Resend, set
+   `RESEND_FROM_EMAIL` too.
+3. Restart `npm run dev` after adding the Resend key (env var changes
+   need a restart, unlike regular code edits).
+4. Full test: create a submittal with your own email as the reviewer →
+   click **Send for Review** → check that email arrives with the
+   reviewer link → open that link, add a comment, click **Approve** →
+   check that a second email arrives at your account's login email
+   summarizing the decision → confirm the submittal now shows
+   "Approved" with your comment in the dashboard.
 
 ## Step 4 — Basic AI spec Q&A — not started
 

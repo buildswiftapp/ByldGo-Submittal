@@ -9,6 +9,7 @@ type Submittal = {
   project_title: string | null;
   status: string;
   subcontractor_name: string | null;
+  review_token: string;
 };
 
 export default function ReviewClient({
@@ -55,45 +56,52 @@ export default function ReviewClient({
           )}
         </div>
 
-        <form action={formAction} className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Reviewer Comments
-            </label>
-            <textarea
-              name="comments"
-              rows={4}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
-            />
-          </div>
+        {state?.success ? (
+          <p className="rounded-md bg-green-50 p-4 text-sm text-green-700">
+            {state.message}
+          </p>
+        ) : (
+          <form action={formAction} className="space-y-4">
+            <input type="hidden" name="reviewToken" value={submittal.review_token} />
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Reviewer Comments
+              </label>
+              <textarea
+                name="comments"
+                rows={4}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+              />
+            </div>
 
-          {state?.message && (
-            <p className="rounded-md bg-blue-50 p-3 text-sm text-blue-700">
-              {state.message}
-            </p>
-          )}
+            {state?.error && (
+              <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+                {state.error}
+              </p>
+            )}
 
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              name="action"
-              value="approve"
-              disabled={pending}
-              className="flex-1 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-            >
-              Approve
-            </button>
-            <button
-              type="submit"
-              name="action"
-              value="request_revision"
-              disabled={pending}
-              className="flex-1 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              Request Revision
-            </button>
-          </div>
-        </form>
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                name="action"
+                value="approve"
+                disabled={pending}
+                className="flex-1 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                Approve
+              </button>
+              <button
+                type="submit"
+                name="action"
+                value="request_revision"
+                disabled={pending}
+                className="flex-1 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Request Revision
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </main>
   );
