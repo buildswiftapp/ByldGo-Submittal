@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useMemo } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSubmittalFromRequirement, deleteSpecBook } from "../actions";
 
@@ -11,6 +11,9 @@ export type SpecBookDetail = {
   status: "processing" | "ready" | "failed";
   error: string | null;
   created_at: string;
+  progress_stage: string | null;
+  progress_current: number | null;
+  progress_total: number | null;
 };
 
 export type SpecRequirement = {
@@ -66,16 +69,12 @@ export default function RegistryClient({
       </div>
 
       {specBook.status === "processing" && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-center">
-          <p className="text-sm font-medium text-amber-800">
-            Scanning this spec book...
-          </p>
-          <p className="mt-1 text-sm text-amber-700">
-            AI is chunking it by section and pulling out every submittal
-            requirement. This can take a few minutes for a large document —
-            this page will update on its own.
-          </p>
-        </div>
+        <ProcessingStatus
+          // Remounts the clock below fresh whenever a poll brings back
+          // actual new progress, instead of it just ticking up forever.
+          key={`${specBook.progress_stage ?? ""}:${specBook.progress_current ?? ""}`}
+          specBook={specBook}
+        />
       )}
 
       {specBook.status === "failed" && (
@@ -124,6 +123,68 @@ export default function RegistryClient({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function ProcessingStatus({ specBook }: { specBook: SpecBookDetail }) {
+  // A plain "Scanning..." message looks identical whether it's actually
+  // working or has silently died. Two things make that visible: a live
+  // "checked X seconds ago" clock (proves the page really is polling), and
+  // real progress numbers once the background job reports them — which
+  // stage it's in, and "X of Y" once it knows a total (page reads and
+  // section detection don't have a clean total to report; per-section
+  // extraction does, since it knows how many sections there are).
+  // Remounted (see the `key` on this component where it's used) whenever a
+  // poll brings back real new progress, so this always starts fresh at 0
+  // rather than needing to reset itself mid-life.
+  const [secondsSinceCheck, setSecondsSinceCheck] = useState(0);
+
+  useEffect(() => {
+    const tick = setInterval(() => setSecondsSinceCheck((s) => s + 1), 1000);
+    return () => clearInterval(tick);
+  }, []);
+
+  const hasTotal =
+    specBook.progress_total !== null && specBook.progress_total > 0;
+  const percent = hasTotal
+    ? Math.round(
+        ((specBook.progress_current ?? 0) / specBook.progress_total!) * 100
+      )
+    : null;
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-6">
+      <p className="text-sm font-medium text-amber-800">
+        {specBook.progress_stage ?? "Scanning this spec book..."}
+      </p>
+
+      {hasTotal ? (
+        <div className="mt-3">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-amber-100">
+            <div
+              className="h-full rounded-full bg-amber-500 transition-all"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-xs text-amber-700">
+            {specBook.progress_current} of {specBook.progress_total} done (
+            {percent}%)
+          </p>
+        </div>
+      ) : (
+        <p className="mt-1 text-sm text-amber-700">
+          This can take a few minutes for a large document.
+        </p>
+      )}
+
+      <p className="mt-3 text-xs text-amber-600">
+        Last update: {secondsSinceCheck === 0 ? "just now" : `${secondsSinceCheck}s ago`}.
+        This page checks in on its own every few seconds — this number
+        resets each time it sees real progress, so as long as it isn&apos;t
+        climbing past a couple minutes it&apos;s still working, just on a
+        slow step.
+      </p>
     </div>
   );
 }

@@ -31,8 +31,11 @@ const MAX_SECTIONS = 150;
 type Boundary = { startPage: number; code: string | null; title: string | null };
 type Page = { num: number; text: string };
 
+export type SegmentProgress = (current: number, total: number) => void;
+
 export async function segmentIntoSections(
-  pageChunks: DocChunk[]
+  pageChunks: DocChunk[],
+  onProgress?: SegmentProgress
 ): Promise<SpecSection[]> {
   const pages = pageChunks
     .map((c) => ({ num: parsePageNumber(c.label), text: c.text }))
@@ -48,7 +51,7 @@ export async function segmentIntoSections(
   let boundaries: Boundary[] = [];
   if (anthropic) {
     try {
-      boundaries = await detectBoundaries(pages);
+      boundaries = await detectBoundaries(pages, onProgress);
     } catch {
       boundaries = [];
     }
@@ -67,13 +70,30 @@ function parsePageNumber(label: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
-async function detectBoundaries(pages: Page[]): Promise<Boundary[]> {
+// Precomputes each window's starting index up front (rather than tracking
+// progress inline in the loop below) so the total window count is known
+// before the first AI call — that's what lets onProgress report "1 of 12"
+// instead of just a running count with no denominator.
+function windowStarts(pageCount: number): number[] {
+  const step = WINDOW_PAGES - WINDOW_OVERLAP;
+  const starts: number[] = [];
+  for (let i = 0; i < pageCount; i += step) {
+    starts.push(i);
+    if (i + WINDOW_PAGES >= pageCount) break;
+  }
+  return starts;
+}
+
+async function detectBoundaries(
+  pages: Page[],
+  onProgress?: SegmentProgress
+): Promise<Boundary[]> {
   const all: Boundary[] = [];
   const seenStartPages = new Set<number>();
-  const step = WINDOW_PAGES - WINDOW_OVERLAP;
+  const starts = windowStarts(pages.length);
 
-  for (let i = 0; i < pages.length; i += step) {
-    const window = pages.slice(i, i + WINDOW_PAGES);
+  for (let w = 0; w < starts.length; w++) {
+    const window = pages.slice(starts[w], starts[w] + WINDOW_PAGES);
     if (window.length === 0) break;
 
     const windowText = window.map((p) => `[Page ${p.num}]\n${p.text}`).join("\n\n");
@@ -86,7 +106,7 @@ async function detectBoundaries(pages: Page[]): Promise<Boundary[]> {
       }
     }
 
-    if (i + WINDOW_PAGES >= pages.length) break;
+    onProgress?.(w + 1, starts.length);
   }
 
   all.sort((a, b) => a.startPage - b.startPage);

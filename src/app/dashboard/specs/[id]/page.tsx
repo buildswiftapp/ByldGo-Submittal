@@ -26,7 +26,9 @@ export default async function SpecBookPage({
 
   const { data: specBook } = await supabase
     .from("spec_books")
-    .select("id, name, status, error, created_at")
+    .select(
+      "id, name, status, error, created_at, progress_stage, progress_current, progress_total"
+    )
     .eq("id", id)
     .eq("account_id", account?.id ?? "")
     .maybeSingle();

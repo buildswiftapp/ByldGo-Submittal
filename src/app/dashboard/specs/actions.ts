@@ -90,7 +90,25 @@ async function processSpecBook(
 ) {
   const admin = createAdminClient();
 
+  // Best-effort progress ping — a failed update here shouldn't take down
+  // the actual scan, so it's swallowed rather than thrown.
+  async function setProgress(
+    stage: string,
+    current: number | null,
+    total: number | null
+  ) {
+    try {
+      await admin
+        .from("spec_books")
+        .update({ progress_stage: stage, progress_current: current, progress_total: total })
+        .eq("id", specBookId);
+    } catch {
+      // ignore — progress is a nice-to-have, not worth failing the scan over
+    }
+  }
+
   try {
+    await setProgress("Reading document...", null, null);
     const pageChunks = await extractChunks(buffer, fileName);
     if (pageChunks.length === 0) {
       await admin
@@ -104,12 +122,18 @@ async function processSpecBook(
       return;
     }
 
-    const sections = await segmentIntoSections(pageChunks);
+    await setProgress("Finding spec sections...", null, null);
+    const sections = await segmentIntoSections(pageChunks, (current, total) =>
+      setProgress("Finding spec sections...", current, total)
+    );
 
+    await setProgress("Extracting requirements...", 0, sections.length);
     const itemsPerSection = await mapWithConcurrency(
       sections,
       EXTRACTION_CONCURRENCY,
-      (section) => extractRequirementsFromSection(section)
+      (section) => extractRequirementsFromSection(section),
+      (completedCount, total) =>
+        setProgress("Extracting requirements...", completedCount, total)
     );
 
     const rows = itemsPerSection.flat().map((item) => ({
