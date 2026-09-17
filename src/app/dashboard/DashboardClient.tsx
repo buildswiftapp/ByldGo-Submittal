@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { createSubmittal, sendForReview } from "./actions";
+import { querySpecAI } from "./ai-actions";
 
 export type Submittal = {
   id: string;
@@ -118,7 +119,7 @@ export default function DashboardClient({
             {sorted.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
-                  No submittals yet. Click "New Submittal" to add one.
+                  No submittals yet. Click &quot;New Submittal&quot; to add one.
                 </td>
               </tr>
             )}
@@ -343,6 +344,8 @@ function DetailPanel({
           )}
         </div>
 
+        <SpecQA submittalId={submittal.id} hasFile={!!submittal.file_path} />
+
         <div>
           <span className="mb-1 block text-xs uppercase text-gray-400">
             Reviewer link (no login required)
@@ -401,6 +404,57 @@ function SendForReviewButton({
         <span className="text-xs text-red-600">{state.error}</span>
       )}
     </form>
+  );
+}
+
+function SpecQA({
+  submittalId,
+  hasFile,
+}: {
+  submittalId: string;
+  hasFile: boolean;
+}) {
+  const [state, formAction, pending] = useActionState(querySpecAI, null);
+
+  if (!hasFile) return null;
+
+  return (
+    <div className="border-t border-gray-200 pt-4">
+      <span className="mb-2 block text-xs uppercase text-gray-400">
+        Query Specification AI
+      </span>
+      <form action={formAction} className="flex items-center gap-2">
+        <input type="hidden" name="submittalId" value={submittalId} />
+        <input
+          name="query"
+          type="text"
+          placeholder="e.g. What are the curing time requirements?"
+          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+        />
+        <button
+          type="submit"
+          disabled={pending}
+          className="shrink-0 rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+        >
+          {pending ? "Searching..." : "Search"}
+        </button>
+      </form>
+
+      {state && "error" in state && (
+        <p className="mt-2 text-sm text-red-600">{state.error}</p>
+      )}
+
+      {state && "success" in state && state.success && (
+        <div className="mt-3 rounded-md bg-gray-50 p-3 text-sm">
+          <div className="whitespace-pre-wrap text-gray-900">
+            {state.answer}
+          </div>
+          <div className="mt-2 text-xs text-gray-400">
+            Searched: {state.sourceLabels.join(", ")}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

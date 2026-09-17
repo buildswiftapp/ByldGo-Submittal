@@ -140,9 +140,80 @@ worth remembering from testing this:
   normal for a shared sandbox address, not a bug. It'll stop once you
   verify `byldgo.com` in Resend and send from a real address on it.
 
-## Step 4 — Basic AI spec Q&A — not started
+## Step 4 — AI Specification Registry ✅ done
 
-## Step 5 — Full split-screen AI Specification Analysis Portal — not started
+**Why this looks different from the original plan:** the first version of
+Step 4 was a per-submittal "ask a question about this file" search box.
+After trying it, the real workflow turned out to be different: a GC
+receives one large project spec book (300-400 pages) up front, and what
+actually saves time is having AI read the *whole* thing once and hand back
+every submittal requirement it found — not answering one-off questions.
+This step was rebuilt around that instead.
+
+**What was built:**
+
+- **New "Specifications" area** (nav link at the top of the dashboard,
+  next to "Submittal Log"). Upload a full project spec book there (PDF or
+  .docx) and give it a name.
+- **Two-pass AI scan, running in the background** so the upload itself
+  doesn't hang for minutes:
+  1. **Segmentation** — AI reads the document in overlapping page windows
+     and finds where each CSI spec section begins (its code, title, and
+     starting page), so the document is split the way a spec book is
+     actually organized, not into arbitrary page blocks. If the document
+     has no page numbers (most .docx files) or the AI can't find enough
+     section breaks, it falls back to fixed-size blocks automatically so
+     the scan still completes.
+  2. **Extraction** — each section is read on its own and AI pulls out
+     every distinct "submit this to the architect/engineer" requirement in
+     it (product data, shop drawings, samples, certifications, mix
+     designs, test reports, close-out documents, etc.), written as a
+     plain-language line you could drop straight into a submittal log.
+- **Registry page** for each uploaded spec book — shows "Scanning..." and
+  auto-refreshes while the AI works, then lists every requirement found,
+  grouped by division/section, each one showing exactly which section it
+  came from. Click **Create Submittal** on any row to turn it into a
+  tracked submittal in one click (it's pre-filled with the requirement as
+  the name and the spec book as the project) — the row then links straight
+  to it in the Submittal Log instead of letting you create a duplicate.
+- **The old "Query Specification AI" box is still there too**, in each
+  submittal's detail panel — kept as a quick way to ask a one-off question
+  about a single file, separate from the full-document registry above.
+- **New files:** `supabase/migrations/0004_spec_books.sql` (new
+  `spec_books` and `spec_requirements` tables, RLS policies, and a private
+  `spec-books` storage bucket), `src/lib/ai/segment.ts` (section
+  detection), `src/lib/ai/registryExtract.ts` (per-section requirement
+  extraction), `src/lib/ai/concurrency.ts` (runs section scans a few at a
+  time instead of all at once), `src/app/dashboard/specs/actions.ts`
+  (upload + background processing + "Create Submittal"), and the
+  Specifications pages/components under `src/app/dashboard/specs/`.
+
+**What you should check before the next step:**
+
+1. **Run the new migration.** Open `supabase/migrations/0004_spec_books.sql`
+   and run its contents in Supabase's SQL Editor, the same way you did for
+   the earlier migrations — this step won't work until that table exists.
+2. If you haven't already, create an API key at **console.anthropic.com**
+   and add it to `.env.local` as `ANTHROPIC_API_KEY=sk-ant-...`, then
+   restart `npm run dev`.
+3. Click **Specifications** in the nav, upload a real project spec book,
+   and give it a minute or two — the page should show "Scanning..." and
+   then fill in on its own once it's done.
+4. Spot-check a handful of registry rows against the actual document: does
+   the section it's cited to look right, and does the requirement wording
+   make sense? Click **Create Submittal** on one and confirm it shows up
+   in the Submittal Log and the row now links to it instead of showing the
+   button again.
+5. Try a document that's a scanned image with no selectable text (if you
+   have one handy) — it should show a clear "failed" message rather than
+   silently doing nothing.
+
+## Step 5 — Full split-screen AI Specification Analysis Portal — largely absorbed by Step 4
+
+The original idea for Step 5 (a portal for browsing a spec section-by-
+section) is now mostly covered by the Specifications registry built in
+Step 4. What's left here, if wanted later, is a way to open a registry
+item and read its full source section text side-by-side — not started.
 
 ## Step 6 — Spec revision versioning & change-impact analysis — not started
 

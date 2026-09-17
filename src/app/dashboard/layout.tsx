@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import SignOutButton from "./SignOutButton";
@@ -41,9 +42,19 @@ export default async function DashboardLayout({
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <span className="font-semibold text-gray-900">
-            ByldGo Submittals
-          </span>
+          <div className="flex items-center gap-6">
+            <span className="font-semibold text-gray-900">
+              ByldGo Submittals
+            </span>
+            <nav className="flex items-center gap-4 text-sm text-gray-600">
+              <Link href="/dashboard" className="hover:text-gray-900">
+                Submittal Log
+              </Link>
+              <Link href="/dashboard/specs" className="hover:text-gray-900">
+                Specifications
+              </Link>
+            </nav>
+          </div>
           <SignOutButton />
         </div>
       </header>
