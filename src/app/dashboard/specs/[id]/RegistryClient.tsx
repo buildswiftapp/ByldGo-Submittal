@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { createSubmittalFromRequirement } from "../actions";
+import { createSubmittalFromRequirement, deleteSpecBook } from "../actions";
 
 export type SpecBookDetail = {
   id: string;
@@ -55,11 +55,14 @@ export default function RegistryClient({
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-lg font-semibold text-gray-900">{specBook.name}</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Uploaded {new Date(specBook.created_at).toLocaleString()}
-        </p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-gray-900">{specBook.name}</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Uploaded {new Date(specBook.created_at).toLocaleString()}
+          </p>
+        </div>
+        <DeleteSpecBookButton specBookId={specBook.id} />
       </div>
 
       {specBook.status === "processing" && (
@@ -122,6 +125,37 @@ export default function RegistryClient({
         </>
       )}
     </div>
+  );
+}
+
+function DeleteSpecBookButton({ specBookId }: { specBookId: string }) {
+  const [state, formAction, pending] = useActionState(deleteSpecBook, null);
+
+  return (
+    <form
+      action={formAction}
+      onSubmit={(e) => {
+        if (
+          !confirm(
+            "Delete this spec book and its whole registry? This can't be undone. Any submittals already created from it are kept."
+          )
+        ) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="specBookId" value={specBookId} />
+      <button
+        type="submit"
+        disabled={pending}
+        className="shrink-0 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+      >
+        {pending ? "Deleting..." : "Delete"}
+      </button>
+      {state?.error && (
+        <p className="mt-1 text-xs text-red-600">{state.error}</p>
+      )}
+    </form>
   );
 }
 

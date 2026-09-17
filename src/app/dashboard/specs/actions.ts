@@ -217,3 +217,56 @@ export async function createSubmittalFromRequirement(
 
   return { success: true, submittalId: submittal.id };
 }
+
+export type DeleteSpecBookState = { error: string } | null;
+
+// Deletes a spec book, its uploaded file, and every registry row that came
+// from it (the DB cascades spec_requirements automatically — this just also
+// cleans up the file sitting in storage, which a table delete alone
+// wouldn't touch). Any submittal already created from one of its rows is
+// left alone; it just loses the link back to the requirement it came from.
+export async function deleteSpecBook(
+  _prevState: DeleteSpecBookState,
+  formData: FormData
+): Promise<DeleteSpecBookState> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const specBookId = String(formData.get("specBookId") ?? "");
+
+  const { data: account } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("owner_user_id", user.id)
+    .single();
+  if (!account) return { error: "No account found for this user." };
+
+  const { data: specBook, error: fetchError } = await supabase
+    .from("spec_books")
+    .select("id, file_path")
+    .eq("id", specBookId)
+    .eq("account_id", account.id)
+    .single();
+
+  if (fetchError || !specBook) return { error: "Spec book not found." };
+
+  if (specBook.file_path) {
+    // Best-effort — if this fails (e.g. the file was already removed), the
+    // row delete below should still go through rather than getting stuck.
+    await supabase.storage.from(BUCKET).remove([specBook.file_path]);
+  }
+
+  const { error: deleteError } = await supabase
+    .from("spec_books")
+    .delete()
+    .eq("id", specBook.id);
+
+  if (deleteError) return { error: deleteError.message };
+
+  revalidatePath("/dashboard/specs");
+  redirect("/dashboard/specs");
+}

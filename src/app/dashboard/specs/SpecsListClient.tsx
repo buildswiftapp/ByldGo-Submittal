@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { uploadSpecBook } from "./actions";
+import { deleteSpecBook, uploadSpecBook } from "./actions";
 
 export type SpecBook = {
   id: string;
@@ -68,12 +68,13 @@ export default function SpecsListClient({
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Uploaded</th>
+              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
             {specBooks.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-10 text-center text-gray-400">
+                <td colSpan={4} className="px-4 py-10 text-center text-gray-400">
                   No spec books yet. Click &quot;Upload Spec Book&quot; to scan one.
                 </td>
               </tr>
@@ -97,6 +98,9 @@ export default function SpecsListClient({
                 <td className="px-4 py-3 text-gray-600">
                   {new Date(book.created_at).toLocaleDateString()}
                 </td>
+                <td className="px-4 py-3 text-right">
+                  <DeleteButton specBookId={book.id} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -105,6 +109,37 @@ export default function SpecsListClient({
 
       {modalOpen && <UploadModal onClose={() => setModalOpen(false)} />}
     </div>
+  );
+}
+
+function DeleteButton({ specBookId }: { specBookId: string }) {
+  const [state, formAction, pending] = useActionState(deleteSpecBook, null);
+
+  return (
+    <form
+      action={formAction}
+      onSubmit={(e) => {
+        if (
+          !confirm(
+            "Delete this spec book and its whole registry? This can't be undone."
+          )
+        ) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="specBookId" value={specBookId} />
+      <button
+        type="submit"
+        disabled={pending}
+        className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+      >
+        {pending ? "Deleting..." : "Delete"}
+      </button>
+      {state?.error && (
+        <p className="mt-1 text-xs text-red-600">{state.error}</p>
+      )}
+    </form>
   );
 }
 
