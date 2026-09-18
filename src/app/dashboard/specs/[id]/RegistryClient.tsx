@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   createSubmittalFromRequirement,
@@ -344,8 +344,24 @@ function BulkCreateBar({
   // Clears the checkboxes once the bulk create actually finishes — those
   // rows will have a submittal now and switch to the "✓ already created"
   // indicator instead, so there's nothing left to leave selected.
+  //
+  // onSelectAll/onSelectNone are inline arrow functions passed down from
+  // the parent, so they're a new reference on every render — including
+  // the re-render this effect itself causes by calling onSelectNone. A
+  // plain [state, onSelectNone] dependency array would re-fire on that
+  // reference change alone, see the still-successful `state` again, and
+  // call onSelectNone() forever ("Maximum update depth exceeded"). Tracking
+  // which state object was already handled makes this idempotent no
+  // matter how often the effect gets woken back up.
+  const handledStateRef = useRef<typeof state>(null);
   useEffect(() => {
-    if (state && "success" in state && state.success) {
+    if (
+      state &&
+      state !== handledStateRef.current &&
+      "success" in state &&
+      state.success
+    ) {
+      handledStateRef.current = state;
       onSelectNone();
     }
   }, [state, onSelectNone]);
