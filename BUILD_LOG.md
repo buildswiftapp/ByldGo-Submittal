@@ -216,6 +216,31 @@ providers set up. `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` in `.env.local` no
 longer do anything; swap them for `OPENAI_API_KEY`/`OPENAI_MODEL` per the
 updated `.env.local.example`.
 
+**Update:** tested end-to-end against a real 1000-requirement spec book scan
+(9/18/2026) and two gaps came up, both fixed:
+
+- Fixed a bug where a blank `OPENAI_MODEL=` line in `.env.local` was being
+  sent to OpenAI as an empty model name instead of falling back to the
+  default — same category of bug as the earlier `RESEND_FROM_EMAIL` issue
+  (a blank value isn't the same as "not set" unless the code checks for
+  that specifically).
+- **Registry rows that are near-identical repeats now collapse into one
+  row.** A large spec book's overlapping section windows can cause the
+  same requirement to get pulled out more than once, worded almost
+  identically — these now show as a single row with a "Show N sources"
+  toggle that expands to the original occurrences (each still able to
+  become its own submittal, in case you genuinely want one per section).
+  This only collapses requirements whose wording matches after ignoring
+  case/punctuation/spacing — it does not try to guess that two
+  differently-worded requirements mean the same thing, since that's a
+  much easier way to accidentally hide a real requirement.
+- **You can now edit a submittal's details after it's created.** Useful
+  for anything created from the Specifications registry, since those
+  start out with just a name and project — no subcontractor or reviewer
+  yet. Open a submittal in the Submittal Log and click **Edit** to fill
+  in or change the name, project, subcontractor/trade, and reviewer
+  name/email.
+
 ## Step 5 — Full split-screen AI Specification Analysis Portal — largely absorbed by Step 4
 
 The original idea for Step 5 (a portal for browsing a spec section-by-

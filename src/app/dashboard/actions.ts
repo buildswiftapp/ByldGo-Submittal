@@ -69,6 +69,57 @@ export async function createSubmittal(_prevState: unknown, formData: FormData) {
   return { success: true };
 }
 
+export type UpdateSubmittalState = { success: true } | { error: string } | null;
+
+// Edits an existing submittal's details (name, project, subcontractor,
+// reviewer name/email). This is what lets you fill in the reviewer info
+// after the fact for a submittal created from the Specifications registry
+// (those only start out with a name + project — no reviewer on file yet).
+export async function updateSubmittalDetails(
+  _prevState: UpdateSubmittalState,
+  formData: FormData
+): Promise<UpdateSubmittalState> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { data: account } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("owner_user_id", user.id)
+    .single();
+  if (!account) return { error: "No account found for this user." };
+
+  const submittalId = String(formData.get("submittalId") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const projectTitle = String(formData.get("projectTitle") ?? "").trim();
+  const subcontractorName = String(formData.get("subcontractorName") ?? "").trim();
+  const reviewerName = String(formData.get("reviewerName") ?? "").trim();
+  const reviewerEmail = String(formData.get("reviewerEmail") ?? "").trim();
+
+  if (!name) return { error: "Submittal name is required." };
+
+  const { error } = await supabase
+    .from("submittals")
+    .update({
+      name,
+      project_title: projectTitle || null,
+      subcontractor_name: subcontractorName || null,
+      reviewer_name: reviewerName || null,
+      reviewer_email: reviewerEmail || null,
+    })
+    .eq("id", submittalId)
+    .eq("account_id", account.id);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard");
+  return { success: true };
+}
+
 // Moves a submittal from "draft" to "pending_review" and, if a reviewer
 // email is on file, sends them their no-login review link.
 export async function sendForReview(_prevState: unknown, formData: FormData) {

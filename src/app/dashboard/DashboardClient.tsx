@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { createSubmittal, sendForReview } from "./actions";
+import { createSubmittal, sendForReview, updateSubmittalDetails } from "./actions";
 import { querySpecAI } from "./ai-actions";
 
 export type Submittal = {
@@ -52,7 +52,14 @@ export default function DashboardClient({
   submittals: Submittal[];
 }) {
   const [modalOpen, setModalOpen] = useState(false);
-  const [selected, setSelected] = useState<Submittal | null>(null);
+  // Storing just the id (rather than the whole row) and looking it up fresh
+  // on every render means the open detail panel automatically picks up new
+  // values after a save — no effect needed to keep a stale local copy in
+  // sync with the server data.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = selectedId
+    ? (submittals.find((s) => s.id === selectedId) ?? null)
+    : null;
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -126,7 +133,7 @@ export default function DashboardClient({
             {sorted.map((s) => (
               <tr
                 key={s.id}
-                onClick={() => setSelected(s)}
+                onClick={() => setSelectedId(s.id)}
                 className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50"
               >
                 <td className="px-4 py-3 font-medium text-gray-900">
@@ -152,7 +159,7 @@ export default function DashboardClient({
 
       {modalOpen && <NewSubmittalModal onClose={() => setModalOpen(false)} />}
       {selected && (
-        <DetailPanel submittal={selected} onClose={() => setSelected(null)} />
+        <DetailPanel submittal={selected} onClose={() => setSelectedId(null)} />
       )}
     </div>
   );
@@ -228,11 +235,13 @@ function Field({
   name,
   type = "text",
   required = false,
+  defaultValue,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
+  defaultValue?: string;
 }) {
   return (
     <div>
@@ -243,6 +252,7 @@ function Field({
         name={name}
         type={type}
         required={required}
+        defaultValue={defaultValue}
         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
       />
     </div>
@@ -258,6 +268,7 @@ function DetailPanel({
 }) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const reviewLink =
     typeof window !== "undefined"
@@ -277,11 +288,11 @@ function DetailPanel({
 
   return (
     <div className="fixed inset-y-0 right-0 z-20 w-full max-w-md overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-xl">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-gray-900">
-          {submittal.name}
+          {editing ? "Edit submittal" : submittal.name}
         </h2>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+        <button onClick={onClose} className="shrink-0 text-gray-400 hover:text-gray-600">
           ✕
         </button>
       </div>
@@ -302,19 +313,38 @@ function DetailPanel({
           </div>
         </div>
 
-        <Row label="Project" value={submittal.project_title} />
-        <Row label="Subcontractor / trade" value={submittal.subcontractor_name} />
-        <Row label="Reviewer" value={submittal.reviewer_name} />
-        <Row label="Reviewer email" value={submittal.reviewer_email} />
-        <Row label="Reviewer comments" value={submittal.reviewer_comments} />
-        <Row
-          label="Created"
-          value={new Date(submittal.created_at).toLocaleString()}
-        />
-        <Row
-          label="Last updated"
-          value={new Date(submittal.updated_at).toLocaleString()}
-        />
+        {editing ? (
+          <EditDetailsForm
+            submittal={submittal}
+            onDone={() => setEditing(false)}
+          />
+        ) : (
+          <>
+            <div className="flex items-center justify-between">
+              <span className="text-xs uppercase text-gray-400">Details</span>
+              <button
+                onClick={() => setEditing(true)}
+                className="text-xs font-medium text-blue-600 hover:underline"
+              >
+                Edit
+              </button>
+            </div>
+            <Row label="Name" value={submittal.name} />
+            <Row label="Project" value={submittal.project_title} />
+            <Row label="Subcontractor / trade" value={submittal.subcontractor_name} />
+            <Row label="Reviewer" value={submittal.reviewer_name} />
+            <Row label="Reviewer email" value={submittal.reviewer_email} />
+            <Row label="Reviewer comments" value={submittal.reviewer_comments} />
+            <Row
+              label="Created"
+              value={new Date(submittal.created_at).toLocaleString()}
+            />
+            <Row
+              label="Last updated"
+              value={new Date(submittal.updated_at).toLocaleString()}
+            />
+          </>
+        )}
 
         <div>
           <span className="mb-1 block text-xs uppercase text-gray-400">
@@ -367,6 +397,74 @@ function DetailPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+function EditDetailsForm({
+  submittal,
+  onDone,
+}: {
+  submittal: Submittal;
+  onDone: () => void;
+}) {
+  const [state, formAction, pending] = useActionState(
+    updateSubmittalDetails,
+    null
+  );
+
+  useEffect(() => {
+    if (state && "success" in state && state.success) {
+      onDone();
+    }
+  }, [state, onDone]);
+
+  return (
+    <form action={formAction} className="space-y-3">
+      <input type="hidden" name="submittalId" value={submittal.id} />
+      <Field label="Name" name="name" defaultValue={submittal.name} required />
+      <Field
+        label="Project title"
+        name="projectTitle"
+        defaultValue={submittal.project_title ?? ""}
+      />
+      <Field
+        label="Subcontractor / trade"
+        name="subcontractorName"
+        defaultValue={submittal.subcontractor_name ?? ""}
+      />
+      <Field
+        label="Reviewer name"
+        name="reviewerName"
+        defaultValue={submittal.reviewer_name ?? ""}
+      />
+      <Field
+        label="Reviewer email"
+        name="reviewerEmail"
+        type="email"
+        defaultValue={submittal.reviewer_email ?? ""}
+      />
+
+      {state && "error" in state && (
+        <p className="text-sm text-red-600">{state.error}</p>
+      )}
+
+      <div className="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onDone}
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+        >
+          {pending ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </form>
   );
 }
 

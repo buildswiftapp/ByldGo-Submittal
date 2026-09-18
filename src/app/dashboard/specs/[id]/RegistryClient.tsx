@@ -26,6 +26,29 @@ export type SpecRequirement = {
   submittal_id: string | null;
 };
 
+// Two requirements count as "the same" if their wording only differs by
+// case, punctuation, or extra whitespace — the kind of near-identical
+// repeat that comes from the AI scan re-describing the same requirement
+// slightly differently across overlapping section windows. This is
+// deliberately conservative: it does NOT try to merge requirements that are
+// merely similar in meaning but worded differently, since two genuinely
+// distinct requirements (e.g. product data for two different materials)
+// can easily share most of their wording, and guessing wrong there would
+// silently hide a real submittal requirement.
+function normalizeDescription(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[.,;:]+$/, "");
+}
+
+export type RequirementGroup = {
+  key: string;
+  primary: SpecRequirement;
+  occurrences: SpecRequirement[];
+};
+
 export default function RegistryClient({
   specBook,
   requirements,
@@ -43,18 +66,43 @@ export default function RegistryClient({
     return () => clearInterval(interval);
   }, [specBook.status, router]);
 
-  const grouped = useMemo(() => {
+  // Collapse near-identical repeats into a single group before grouping by
+  // division, so a requirement that got extracted more than once (e.g. from
+  // overlapping section windows) shows up as one row with its other
+  // occurrences tucked behind an expand toggle, instead of as separate
+  // rows.
+  const requirementGroups = useMemo(() => {
     const map = new Map<string, SpecRequirement[]>();
     for (const req of requirements) {
-      const key = req.division_code
-        ? `${req.division_code} ${req.division_title ?? ""}`.trim()
-        : req.division_title ?? "Ungrouped";
+      const key = normalizeDescription(req.description);
       const list = map.get(key) ?? [];
       list.push(req);
       map.set(key, list);
     }
-    return Array.from(map.entries());
+    return Array.from(map.entries()).map(
+      ([key, occurrences]): RequirementGroup => ({
+        key,
+        primary: occurrences[0],
+        occurrences,
+      })
+    );
   }, [requirements]);
+
+  const duplicateCount = requirements.length - requirementGroups.length;
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, RequirementGroup[]>();
+    for (const group of requirementGroups) {
+      const req = group.primary;
+      const key = req.division_code
+        ? `${req.division_code} ${req.division_title ?? ""}`.trim()
+        : req.division_title ?? "Ungrouped";
+      const list = map.get(key) ?? [];
+      list.push(group);
+      map.set(key, list);
+    }
+    return Array.from(map.entries());
+  }, [requirementGroups]);
 
   return (
     <div>
@@ -91,18 +139,27 @@ export default function RegistryClient({
       {specBook.status === "ready" && (
         <>
           <p className="mb-4 text-sm text-gray-500">
-            {requirements.length} requirement
-            {requirements.length === 1 ? "" : "s"} found across{" "}
-            {grouped.length} section{grouped.length === 1 ? "" : "s"}.
+            {requirementGroups.length} requirement
+            {requirementGroups.length === 1 ? "" : "s"} found across{" "}
+            {grouped.length} section{grouped.length === 1 ? "" : "s"}
+            {duplicateCount > 0 && (
+              <>
+                {" "}
+                ({duplicateCount} near-identical repeat
+                {duplicateCount === 1 ? "" : "s"} collapsed — expand a row to
+                see them)
+              </>
+            )}
+            .
           </p>
 
-          {requirements.length === 0 ? (
+          {requirementGroups.length === 0 ? (
             <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-gray-400">
               No submittal requirements were found in this document.
             </div>
           ) : (
             <div className="space-y-6">
-              {grouped.map(([groupLabel, items]) => (
+              {grouped.map(([groupLabel, groups]) => (
                 <div
                   key={groupLabel}
                   className="overflow-hidden rounded-lg border border-gray-200 bg-white"
@@ -112,8 +169,8 @@ export default function RegistryClient({
                   </div>
                   <table className="w-full text-left text-sm">
                     <tbody>
-                      {items.map((req) => (
-                        <RequirementRow key={req.id} requirement={req} />
+                      {groups.map((group) => (
+                        <RequirementGroupRow key={group.key} group={group} />
                       ))}
                     </tbody>
                   </table>
@@ -220,7 +277,57 @@ function DeleteSpecBookButton({ specBookId }: { specBookId: string }) {
   );
 }
 
-function RequirementRow({ requirement }: { requirement: SpecRequirement }) {
+function RequirementGroupRow({ group }: { group: RequirementGroup }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasDuplicates = group.occurrences.length > 1;
+
+  return (
+    <>
+      <tr className="border-b border-gray-100 last:border-0">
+        <td className="w-1/2 px-4 py-3 align-top text-gray-900">
+          {group.primary.description}
+        </td>
+        <td className="px-4 py-3 align-top text-xs text-gray-500">
+          {group.primary.source_label}
+          {hasDuplicates && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-1 block font-medium text-blue-600 hover:underline"
+            >
+              {expanded ? "Hide" : "Show"} {group.occurrences.length} sources
+              {expanded ? " ▲" : " ▼"}
+            </button>
+          )}
+        </td>
+        <td className="px-4 py-3 align-top text-right">
+          <RequirementActionCell requirement={group.primary} />
+        </td>
+      </tr>
+      {expanded &&
+        group.occurrences.map((occ) => (
+          <tr key={occ.id} className="border-b border-gray-100 bg-gray-50 last:border-0">
+            <td className="w-1/2 px-4 py-2 pl-8 align-top text-xs text-gray-500">
+              Same wording, found again here:
+            </td>
+            <td className="px-4 py-2 align-top text-xs text-gray-500">
+              {occ.source_label}
+            </td>
+            <td className="px-4 py-2 align-top text-right">
+              <RequirementActionCell requirement={occ} compact />
+            </td>
+          </tr>
+        ))}
+    </>
+  );
+}
+
+function RequirementActionCell({
+  requirement,
+  compact = false,
+}: {
+  requirement: SpecRequirement;
+  compact?: boolean;
+}) {
   const [state, formAction, pending] = useActionState(
     createSubmittalFromRequirement,
     requirement.submittal_id
@@ -232,38 +339,32 @@ function RequirementRow({ requirement }: { requirement: SpecRequirement }) {
     state && "success" in state && state.success ? state.submittalId : null;
 
   return (
-    <tr className="border-b border-gray-100 last:border-0">
-      <td className="w-1/2 px-4 py-3 align-top text-gray-900">
-        {requirement.description}
-      </td>
-      <td className="px-4 py-3 align-top text-xs text-gray-500">
-        {requirement.source_label}
-      </td>
-      <td className="px-4 py-3 align-top text-right">
-        {submittalId ? (
-          <Link
-            href="/dashboard"
-            className="text-xs font-medium text-blue-600 hover:underline"
+    <>
+      {submittalId ? (
+        <Link
+          href="/dashboard"
+          className="text-xs font-medium text-blue-600 hover:underline"
+        >
+          View in Submittal Log →
+        </Link>
+      ) : (
+        <form action={formAction}>
+          <input type="hidden" name="requirementId" value={requirement.id} />
+          <input type="hidden" name="specBookId" value={requirement.spec_book_id} />
+          <button
+            type="submit"
+            disabled={pending}
+            className={`rounded-md border border-gray-300 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 ${
+              compact ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs"
+            }`}
           >
-            View in Submittal Log →
-          </Link>
-        ) : (
-          <form action={formAction}>
-            <input type="hidden" name="requirementId" value={requirement.id} />
-            <input type="hidden" name="specBookId" value={requirement.spec_book_id} />
-            <button
-              type="submit"
-              disabled={pending}
-              className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              {pending ? "Creating..." : "Create Submittal"}
-            </button>
-          </form>
-        )}
-        {state && "error" in state && (
-          <p className="mt-1 text-xs text-red-600">{state.error}</p>
-        )}
-      </td>
-    </tr>
+            {pending ? "Creating..." : "Create Submittal"}
+          </button>
+        </form>
+      )}
+      {state && "error" in state && (
+        <p className="mt-1 text-xs text-red-600">{state.error}</p>
+      )}
+    </>
   );
 }
