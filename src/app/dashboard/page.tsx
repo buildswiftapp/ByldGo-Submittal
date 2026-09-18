@@ -17,7 +17,7 @@ export default async function DashboardPage() {
   const { data: submittals } = await supabase
     .from("submittals")
     .select(
-      "id, name, project_title, status, subcontractor_name, reviewer_name, reviewer_email, reviewer_comments, file_path, review_token, created_at, updated_at"
+      "id, name, project_title, status, subcontractor_name, reviewer_name, reviewer_email, reviewer_comments, file_path, review_token, created_at, updated_at, division_code, division_title"
     )
     .eq("account_id", account?.id ?? "")
     .order("created_at", { ascending: false });

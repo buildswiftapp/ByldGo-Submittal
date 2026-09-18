@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { resend, EMAIL_FROM, SITE_URL } from "@/lib/resend";
+import { parseDivisionInput } from "@/lib/construction";
 
 const BUCKET = "submittal-files";
 
@@ -26,6 +27,7 @@ export async function createSubmittal(_prevState: unknown, formData: FormData) {
   const subcontractorName = String(formData.get("subcontractorName") ?? "").trim();
   const reviewerName = String(formData.get("reviewerName") ?? "").trim();
   const reviewerEmail = String(formData.get("reviewerEmail") ?? "").trim();
+  const division = parseDivisionInput(String(formData.get("division") ?? ""));
   const file = formData.get("file") as File | null;
 
   if (!name) return { error: "Submittal name is required." };
@@ -40,6 +42,8 @@ export async function createSubmittal(_prevState: unknown, formData: FormData) {
       subcontractor_name: subcontractorName || null,
       reviewer_name: reviewerName || null,
       reviewer_email: reviewerEmail || null,
+      division_code: division.code,
+      division_title: division.title,
       status: "draft",
     })
     .select("id")
@@ -100,6 +104,7 @@ export async function updateSubmittalDetails(
   const subcontractorName = String(formData.get("subcontractorName") ?? "").trim();
   const reviewerName = String(formData.get("reviewerName") ?? "").trim();
   const reviewerEmail = String(formData.get("reviewerEmail") ?? "").trim();
+  const division = parseDivisionInput(String(formData.get("division") ?? ""));
   const file = formData.get("file") as File | null;
 
   if (!name) return { error: "Submittal name is required." };
@@ -110,6 +115,8 @@ export async function updateSubmittalDetails(
     subcontractor_name: subcontractorName || null,
     reviewer_name: reviewerName || null,
     reviewer_email: reviewerEmail || null,
+    division_code: division.code,
+    division_title: division.title,
   };
 
   // Attaching (or replacing) a file is optional here — only touch

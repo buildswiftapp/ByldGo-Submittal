@@ -252,6 +252,29 @@ selecting and bulk-creating skips over the near-identical repeats collapsed
 in the update above, so this doesn't flood the Submittal Log with
 duplicates.
 
+**Update:** submittal file attachments now accept any file type, not just
+PDF/DOCX (that restriction only ever made sense for the Specifications spec
+book upload, which is the one the AI actually reads — a plain submittal
+attachment is just stored and shared via a link, so there was no real
+reason to limit it).
+
+**Update:** two changes to how the Submittal Log is organized
+(`supabase/migrations/0006_submittal_division.sql` — run this one too):
+
+- **The Submittal Log is now grouped by CSI division** (or your project's
+  own division scheme, for a non-CSI spec) — the same grouping style
+  already used in the Specifications registry. A submittal created from
+  the registry picks up its division automatically from the spec section
+  it came from; a submittal you create by hand lets you pick one.
+- **Division and Subcontractor/trade are now "pick from a list, or just
+  type your own" fields**, on both New Submittal and Edit. Division
+  suggests the 35 standard CSI MasterFormat divisions (03 - Concrete, 26 -
+  Electrical, etc.); Subcontractor suggests ~60 common construction
+  project parties — trade subs, suppliers, the design team (architect,
+  engineers), owner-side roles, and testing/inspection agencies. Either
+  field is happy with something that isn't on the list at all; the list is
+  just there to save typing on the common cases.
+
 ## Step 5 — Full split-screen AI Specification Analysis Portal — largely absorbed by Step 4
 
 The original idea for Step 5 (a portal for browsing a spec section-by-

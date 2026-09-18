@@ -1,9 +1,21 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useActionState,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
 import { createSubmittal, sendForReview, updateSubmittalDetails } from "./actions";
 import { querySpecAI } from "./ai-actions";
+import {
+  DIVISION_OPTIONS,
+  SUBCONTRACTOR_OPTIONS,
+  formatDivisionValue,
+} from "@/lib/construction";
 
 export type Submittal = {
   id: string;
@@ -18,6 +30,8 @@ export type Submittal = {
   review_token: string;
   created_at: string;
   updated_at: string;
+  division_code: string | null;
+  division_title: string | null;
 };
 
 const STATUS_STYLES: Record<Submittal["status"], string> = {
@@ -87,6 +101,29 @@ export default function DashboardClient({
     }
   }
 
+  // Groups the already-sorted rows by CSI division (or whatever a non-CSI
+  // spec calls its own division) — same idea as the Specifications
+  // registry's grouping, just applied to the log. Sorting still happens
+  // above this, and the sort order is preserved within each group.
+  const groupedByDivision = useMemo(() => {
+    const map = new Map<string, Submittal[]>();
+    for (const s of sorted) {
+      const key = s.division_code
+        ? `${s.division_code} - ${s.division_title ?? ""}`.trim()
+        : (s.division_title ?? "Ungrouped");
+      const list = map.get(key) ?? [];
+      list.push(s);
+      map.set(key, list);
+    }
+    // Numeric-aware sort so "03 - Concrete" comes before "23 - Electrical"
+    // rather than sorting as plain text; "Ungrouped" always goes last.
+    return Array.from(map.entries()).sort(([a], [b]) => {
+      if (a === "Ungrouped") return 1;
+      if (b === "Ungrouped") return -1;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+  }, [sorted]);
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -130,28 +167,40 @@ export default function DashboardClient({
                 </td>
               </tr>
             )}
-            {sorted.map((s) => (
-              <tr
-                key={s.id}
-                onClick={() => setSelectedId(s.id)}
-                className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50"
-              >
-                <td className="px-4 py-3 font-medium text-gray-900">
-                  {s.name}
-                </td>
-                <td className="px-4 py-3 text-gray-600">
-                  {s.project_title ?? "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={s.status} />
-                </td>
-                <td className="px-4 py-3 text-gray-600">
-                  {s.subcontractor_name ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-gray-600">
-                  {new Date(s.created_at).toLocaleDateString()}
-                </td>
-              </tr>
+            {groupedByDivision.map(([groupLabel, items]) => (
+              <Fragment key={groupLabel}>
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase text-gray-500"
+                  >
+                    {groupLabel}
+                  </td>
+                </tr>
+                {items.map((s) => (
+                  <tr
+                    key={s.id}
+                    onClick={() => setSelectedId(s.id)}
+                    className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                  >
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {s.name}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {s.project_title ?? "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={s.status} />
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {s.subcontractor_name ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {new Date(s.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -189,7 +238,19 @@ function NewSubmittalModal({ onClose }: { onClose: () => void }) {
         <form action={formAction} className="space-y-3">
           <Field label="Submittal name" name="name" required />
           <Field label="Project title" name="projectTitle" />
-          <Field label="Subcontractor / trade" name="subcontractorName" />
+          <ComboField
+            label="Division"
+            name="division"
+            options={DIVISION_OPTIONS}
+            placeholder="e.g. 03 - Concrete"
+            helpText="Pick a CSI division, or type your own for a non-CSI spec."
+          />
+          <ComboField
+            label="Subcontractor / trade"
+            name="subcontractorName"
+            options={SUBCONTRACTOR_OPTIONS}
+            placeholder="e.g. Concrete Subcontractor"
+          />
           <Field label="Reviewer name" name="reviewerName" />
           <Field label="Reviewer email" name="reviewerEmail" type="email" />
           <div>
@@ -254,6 +315,53 @@ function Field({
         defaultValue={defaultValue}
         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
       />
+    </div>
+  );
+}
+
+// A text input backed by a <datalist> of suggestions — the browser filters
+// the list as you type and shows it as a dropdown, but unlike a <select>
+// it never restricts you to only those options. Used for Division and
+// Subcontractor/trade, where a long reference list covers the common
+// cases but real projects always have exceptions worth typing freely.
+function ComboField({
+  label,
+  name,
+  options,
+  defaultValue,
+  placeholder,
+  helpText,
+  required = false,
+}: {
+  label: string;
+  name: string;
+  options: string[];
+  defaultValue?: string;
+  placeholder?: string;
+  helpText?: string;
+  required?: boolean;
+}) {
+  const listId = useId();
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium text-gray-700">
+        {label}
+      </label>
+      <input
+        name={name}
+        list={listId}
+        required={required}
+        defaultValue={defaultValue}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none"
+      />
+      <datalist id={listId}>
+        {options.map((opt) => (
+          <option key={opt} value={opt} />
+        ))}
+      </datalist>
+      {helpText && <p className="mt-1 text-xs text-gray-400">{helpText}</p>}
     </div>
   );
 }
@@ -342,6 +450,13 @@ function DetailPanel({
             </div>
             <Row label="Name" value={submittal.name} />
             <Row label="Project" value={submittal.project_title} />
+            <Row
+              label="Division"
+              value={formatDivisionValue(
+                submittal.division_code,
+                submittal.division_title
+              )}
+            />
             <Row label="Subcontractor / trade" value={submittal.subcontractor_name} />
             <Row label="Reviewer" value={submittal.reviewer_name} />
             <Row label="Reviewer email" value={submittal.reviewer_email} />
@@ -438,9 +553,22 @@ function EditDetailsForm({
         name="projectTitle"
         defaultValue={submittal.project_title ?? ""}
       />
-      <Field
+      <ComboField
+        label="Division"
+        name="division"
+        options={DIVISION_OPTIONS}
+        placeholder="e.g. 03 - Concrete"
+        helpText="Pick a CSI division, or type your own for a non-CSI spec."
+        defaultValue={formatDivisionValue(
+          submittal.division_code,
+          submittal.division_title
+        )}
+      />
+      <ComboField
         label="Subcontractor / trade"
         name="subcontractorName"
+        options={SUBCONTRACTOR_OPTIONS}
+        placeholder="e.g. Concrete Subcontractor"
         defaultValue={submittal.subcontractor_name ?? ""}
       />
       <Field

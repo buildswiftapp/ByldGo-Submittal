@@ -222,6 +222,8 @@ export async function createSubmittalFromRequirement(
       account_id: account.id,
       name: requirement.description,
       project_title: specBook?.name ?? null,
+      division_code: requirement.division_code,
+      division_title: requirement.division_title,
       status: "draft",
     })
     .select("id")
@@ -292,7 +294,7 @@ export async function createSubmittalsFromRequirements(
 
   const { data: requirements, error: fetchError } = await supabase
     .from("spec_requirements")
-    .select("id, description, submittal_id")
+    .select("id, description, division_code, division_title, submittal_id")
     .in("id", requirementIds)
     .eq("account_id", account.id);
 
@@ -317,6 +319,8 @@ export async function createSubmittalsFromRequirements(
           account_id: account.id,
           name: req.description,
           project_title: specBook?.name ?? null,
+          division_code: req.division_code,
+          division_title: req.division_title,
           status: "draft",
         })
         .select("id")
