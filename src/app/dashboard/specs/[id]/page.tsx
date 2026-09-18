@@ -6,6 +6,11 @@ import RegistryClient, {
   type SpecRequirement,
 } from "./RegistryClient";
 
+// The "create submittals for everything I selected" bulk action on this
+// page can mean hundreds of database writes in one request — same reason
+// the upload page sets this.
+export const maxDuration = 300;
+
 export default async function SpecBookPage({
   params,
 }: {

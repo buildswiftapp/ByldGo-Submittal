@@ -241,6 +241,17 @@ updated `.env.local.example`.
   in or change the name, project, subcontractor/trade, and reviewer
   name/email.
 
+**Update:** the registry can now create submittals for many rows at once
+instead of one click at a time. Every row (except ones that already have a
+submittal) has a checkbox; **Select all** / **Select none** at the top pick
+everything or clear the selection, and clicking individual checkboxes picks
+whatever subset you want. **Create N Submittals** then creates all of them
+in one go and reports back how many were created (and flags any that
+already existed or failed). This works against the *deduplicated* rows —
+selecting and bulk-creating skips over the near-identical repeats collapsed
+in the update above, so this doesn't flood the Submittal Log with
+duplicates.
+
 ## Step 5 — Full split-screen AI Specification Analysis Portal — largely absorbed by Step 4
 
 The original idea for Step 5 (a portal for browsing a spec section-by-

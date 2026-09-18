@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createSubmittalFromRequirement, deleteSpecBook } from "../actions";
+import {
+  createSubmittalFromRequirement,
+  createSubmittalsFromRequirements,
+  deleteSpecBook,
+} from "../actions";
 
 export type SpecBookDetail = {
   id: string;
@@ -104,6 +108,29 @@ export default function RegistryClient({
     return Array.from(map.entries());
   }, [requirementGroups]);
 
+  // Selection is tracked by the id of each group's primary requirement —
+  // checking a row means "include this requirement" (its duplicates, if
+  // any, aren't auto-included; expand the row to select one of those
+  // individually instead). Rows that already have a submittal aren't
+  // selectable — bulk-creating over them again would be a no-op at best.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectableIds = useMemo(
+    () =>
+      requirementGroups
+        .filter((g) => !g.primary.submittal_id)
+        .map((g) => g.primary.id),
+    [requirementGroups]
+  );
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   return (
     <div>
       <div className="mb-6 flex items-start justify-between">
@@ -158,25 +185,42 @@ export default function RegistryClient({
               No submittal requirements were found in this document.
             </div>
           ) : (
-            <div className="space-y-6">
-              {grouped.map(([groupLabel, groups]) => (
-                <div
-                  key={groupLabel}
-                  className="overflow-hidden rounded-lg border border-gray-200 bg-white"
-                >
-                  <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase text-gray-500">
-                    {groupLabel}
+            <>
+              <BulkCreateBar
+                specBookId={specBook.id}
+                selectedIds={selectedIds}
+                selectableIds={selectableIds}
+                onSelectAll={() => setSelectedIds(new Set(selectableIds))}
+                onSelectNone={() => setSelectedIds(new Set())}
+              />
+
+              <div className="space-y-6">
+                {grouped.map(([groupLabel, groups]) => (
+                  <div
+                    key={groupLabel}
+                    className="overflow-hidden rounded-lg border border-gray-200 bg-white"
+                  >
+                    <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase text-gray-500">
+                      {groupLabel}
+                    </div>
+                    <table className="w-full text-left text-sm">
+                      <tbody>
+                        {groups.map((group) => (
+                          <RequirementGroupRow
+                            key={group.key}
+                            group={group}
+                            selected={selectedIds.has(group.primary.id)}
+                            onToggleSelected={() =>
+                              toggleSelected(group.primary.id)
+                            }
+                          />
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                  <table className="w-full text-left text-sm">
-                    <tbody>
-                      {groups.map((group) => (
-                        <RequirementGroupRow key={group.key} group={group} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </>
       )}
@@ -277,13 +321,125 @@ function DeleteSpecBookButton({ specBookId }: { specBookId: string }) {
   );
 }
 
-function RequirementGroupRow({ group }: { group: RequirementGroup }) {
+function BulkCreateBar({
+  specBookId,
+  selectedIds,
+  selectableIds,
+  onSelectAll,
+  onSelectNone,
+}: {
+  specBookId: string;
+  selectedIds: Set<string>;
+  selectableIds: string[];
+  onSelectAll: () => void;
+  onSelectNone: () => void;
+}) {
+  const [state, formAction, pending] = useActionState(
+    createSubmittalsFromRequirements,
+    null
+  );
+
+  const selectedCount = selectedIds.size;
+
+  // Clears the checkboxes once the bulk create actually finishes — those
+  // rows will have a submittal now and switch to the "✓ already created"
+  // indicator instead, so there's nothing left to leave selected.
+  useEffect(() => {
+    if (state && "success" in state && state.success) {
+      onSelectNone();
+    }
+  }, [state, onSelectNone]);
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+      <button
+        type="button"
+        onClick={onSelectAll}
+        disabled={selectableIds.length === 0}
+        className="text-xs font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline"
+      >
+        Select all ({selectableIds.length})
+      </button>
+      <button
+        type="button"
+        onClick={onSelectNone}
+        disabled={selectedCount === 0}
+        className="text-xs font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline"
+      >
+        Select none
+      </button>
+
+      <span className="text-xs text-gray-500">{selectedCount} selected</span>
+
+      <form action={formAction} className="ml-auto flex items-center gap-2">
+        <input type="hidden" name="specBookId" value={specBookId} />
+        {Array.from(selectedIds).map((id) => (
+          <input key={id} type="hidden" name="requirementIds" value={id} />
+        ))}
+        <button
+          type="submit"
+          disabled={selectedCount === 0 || pending}
+          className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+        >
+          {pending
+            ? `Creating ${selectedCount} submittal${selectedCount === 1 ? "" : "s"}...`
+            : selectedCount === 0
+              ? "Create Submittals"
+              : `Create ${selectedCount} Submittal${selectedCount === 1 ? "" : "s"}`}
+        </button>
+      </form>
+
+      {state && "error" in state && (
+        <p className="w-full text-xs text-red-600">{state.error}</p>
+      )}
+      {state && "success" in state && state.success && (
+        <p className="w-full text-xs text-green-700">
+          Created {state.created} submittal{state.created === 1 ? "" : "s"}
+          {state.alreadyLinked > 0
+            ? ` (${state.alreadyLinked} already had one)`
+            : ""}
+          {state.failed > 0 ? ` — ${state.failed} failed` : ""}. Check the{" "}
+          <Link href="/dashboard" className="underline">
+            Submittal Log
+          </Link>
+          .
+        </p>
+      )}
+    </div>
+  );
+}
+
+function RequirementGroupRow({
+  group,
+  selected,
+  onToggleSelected,
+}: {
+  group: RequirementGroup;
+  selected: boolean;
+  onToggleSelected: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const hasDuplicates = group.occurrences.length > 1;
+  const alreadyCreated = !!group.primary.submittal_id;
 
   return (
     <>
       <tr className="border-b border-gray-100 last:border-0">
+        <td className="w-10 px-4 py-3 align-top">
+          {alreadyCreated ? (
+            <span className="block text-center text-xs text-gray-300" title="Already has a submittal">
+              ✓
+            </span>
+          ) : (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelected}
+              className="h-4 w-4 rounded border-gray-300"
+              aria-label={`Select "${group.primary.description}"`}
+            />
+          )}
+        </td>
         <td className="w-1/2 px-4 py-3 align-top text-gray-900">
           {group.primary.description}
         </td>
@@ -304,8 +460,12 @@ function RequirementGroupRow({ group }: { group: RequirementGroup }) {
         </td>
       </tr>
       {expanded &&
-        group.occurrences.map((occ) => (
+        // occurrences[0] is the primary row shown above — only list the
+        // others here, so the primary's own source isn't repeated right
+        // under itself.
+        group.occurrences.slice(1).map((occ) => (
           <tr key={occ.id} className="border-b border-gray-100 bg-gray-50 last:border-0">
+            <td className="px-4 py-2 align-top"></td>
             <td className="w-1/2 px-4 py-2 pl-8 align-top text-xs text-gray-500">
               Same wording, found again here:
             </td>
@@ -335,8 +495,13 @@ function RequirementActionCell({
       : null
   );
 
+  // Checks the live prop first, not just this row's own action result — a
+  // bulk-create (a different action entirely, run from the selection bar
+  // above) can be what actually created this submittal, and the prop is
+  // what reflects that once the page's data refreshes.
   const submittalId =
-    state && "success" in state && state.success ? state.submittalId : null;
+    requirement.submittal_id ??
+    (state && "success" in state && state.success ? state.submittalId : null);
 
   return (
     <>

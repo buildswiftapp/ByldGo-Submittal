@@ -242,6 +242,110 @@ export async function createSubmittalFromRequirement(
   return { success: true, submittalId: submittal.id };
 }
 
+export type BulkCreateSubmittalsState =
+  | { success: true; created: number; alreadyLinked: number; failed: number }
+  | { error: string }
+  | null;
+
+const BULK_CREATE_CONCURRENCY = 5;
+
+// Same idea as createSubmittalFromRequirement above, just for many
+// registry rows at once (the "select some rows, create them all" bulk
+// action). Runs the inserts through a small worker pool rather than one at
+// a time or all simultaneously — the same concurrency helper the AI scan
+// itself uses — since a big spec book can mean hundreds of rows selected
+// at once.
+export async function createSubmittalsFromRequirements(
+  _prevState: BulkCreateSubmittalsState,
+  formData: FormData
+): Promise<BulkCreateSubmittalsState> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const specBookId = String(formData.get("specBookId") ?? "");
+  const requirementIds = formData
+    .getAll("requirementIds")
+    .map((v) => String(v))
+    .filter(Boolean);
+
+  if (requirementIds.length === 0) {
+    return { error: "Select at least one requirement first." };
+  }
+
+  const { data: account } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("owner_user_id", user.id)
+    .single();
+  if (!account) return { error: "No account found for this user." };
+
+  const { data: specBook } = await supabase
+    .from("spec_books")
+    .select("name")
+    .eq("id", specBookId)
+    .eq("account_id", account.id)
+    .single();
+
+  const { data: requirements, error: fetchError } = await supabase
+    .from("spec_requirements")
+    .select("id, description, submittal_id")
+    .in("id", requirementIds)
+    .eq("account_id", account.id);
+
+  if (fetchError) return { error: fetchError.message };
+  if (!requirements || requirements.length === 0) {
+    return { error: "None of the selected registry items could be found." };
+  }
+
+  // Anything that already has a submittal is left alone — creating a
+  // second one for it would just make a duplicate, and the per-row action
+  // already treats "has a submittal" as done rather than re-creating.
+  const toCreate = requirements.filter((r) => !r.submittal_id);
+  const alreadyLinked = requirements.length - toCreate.length;
+
+  const results = await mapWithConcurrency(
+    toCreate,
+    BULK_CREATE_CONCURRENCY,
+    async (req) => {
+      const { data: submittal, error: insertError } = await supabase
+        .from("submittals")
+        .insert({
+          account_id: account.id,
+          name: req.description,
+          project_title: specBook?.name ?? null,
+          status: "draft",
+        })
+        .select("id")
+        .single();
+
+      if (insertError || !submittal) return { ok: false as const };
+
+      await supabase
+        .from("spec_requirements")
+        .update({ submittal_id: submittal.id })
+        .eq("id", req.id);
+
+      return { ok: true as const };
+    }
+  );
+
+  const failed = results.filter((r) => !r.ok).length;
+  const created = results.length - failed;
+
+  revalidatePath(`/dashboard/specs/${specBookId}`);
+  revalidatePath("/dashboard");
+
+  if (created === 0 && failed > 0) {
+    return { error: `Couldn't create any submittals (${failed} failed).` };
+  }
+
+  return { success: true, created, alreadyLinked, failed };
+}
+
 export type DeleteSpecBookState = { error: string } | null;
 
 // Deletes a spec book, its uploaded file, and every registry row that came
