@@ -72,9 +72,10 @@ export async function createSubmittal(_prevState: unknown, formData: FormData) {
 export type UpdateSubmittalState = { success: true } | { error: string } | null;
 
 // Edits an existing submittal's details (name, project, subcontractor,
-// reviewer name/email). This is what lets you fill in the reviewer info
-// after the fact for a submittal created from the Specifications registry
-// (those only start out with a name + project — no reviewer on file yet).
+// reviewer name/email, and optionally the file). This is what lets you
+// fill in the reviewer info — and attach a file — after the fact for a
+// submittal created from the Specifications registry (those only start
+// out with a name + project — no reviewer or file on file yet).
 export async function updateSubmittalDetails(
   _prevState: UpdateSubmittalState,
   formData: FormData
@@ -99,18 +100,36 @@ export async function updateSubmittalDetails(
   const subcontractorName = String(formData.get("subcontractorName") ?? "").trim();
   const reviewerName = String(formData.get("reviewerName") ?? "").trim();
   const reviewerEmail = String(formData.get("reviewerEmail") ?? "").trim();
+  const file = formData.get("file") as File | null;
 
   if (!name) return { error: "Submittal name is required." };
 
+  const update: Record<string, string | null> = {
+    name,
+    project_title: projectTitle || null,
+    subcontractor_name: subcontractorName || null,
+    reviewer_name: reviewerName || null,
+    reviewer_email: reviewerEmail || null,
+  };
+
+  // Attaching (or replacing) a file is optional here — only touch
+  // file_path if one was actually chosen, so saving the other fields never
+  // accidentally clears an existing file.
+  if (file && file.size > 0) {
+    const path = `${account.id}/${submittalId}/${file.name}`;
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, file, { upsert: true });
+
+    if (uploadError) {
+      return { error: `Couldn't upload the file: ${uploadError.message}` };
+    }
+    update.file_path = path;
+  }
+
   const { error } = await supabase
     .from("submittals")
-    .update({
-      name,
-      project_title: projectTitle || null,
-      subcontractor_name: subcontractorName || null,
-      reviewer_name: reviewerName || null,
-      reviewer_email: reviewerEmail || null,
-    })
+    .update(update)
     .eq("id", submittalId)
     .eq("account_id", account.id);
 

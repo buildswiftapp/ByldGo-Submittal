@@ -267,8 +267,20 @@ function DetailPanel({
   onClose: () => void;
 }) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileUrlPath, setFileUrlPath] = useState<string | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
   const [editing, setEditing] = useState(false);
+
+  // A previously-loaded signed link points at whatever file was current
+  // when it was fetched — if editing just replaced the file, that link is
+  // now stale. Resetting it here (during render, when the path we fetched
+  // it for no longer matches) rather than in an effect is the pattern
+  // React itself recommends for "state that depends on a prop" — it avoids
+  // an extra render pass that a useEffect-based reset would cause.
+  if (fileUrlPath !== submittal.file_path) {
+    setFileUrlPath(submittal.file_path);
+    setFileUrl(null);
+  }
 
   const reviewLink =
     typeof window !== "undefined"
@@ -443,6 +455,22 @@ function EditDetailsForm({
         type="email"
         defaultValue={submittal.reviewer_email ?? ""}
       />
+      <div>
+        <label className="mb-1 block text-sm font-medium text-gray-700">
+          {submittal.file_path ? "Replace file" : "Attach a file"} (PDF/DOCX)
+        </label>
+        <input
+          name="file"
+          type="file"
+          accept=".pdf,.doc,.docx"
+          className="w-full text-sm"
+        />
+        {submittal.file_path && (
+          <p className="mt-1 text-xs text-gray-400">
+            Leave this blank to keep the current file.
+          </p>
+        )}
+      </div>
 
       {state && "error" in state && (
         <p className="text-sm text-red-600">{state.error}</p>
