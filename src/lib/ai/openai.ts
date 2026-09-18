@@ -13,4 +13,9 @@ export const openai = process.env.OPENAI_API_KEY
 // Terra is a balanced default: solid at structured extraction without the
 // flagship price, which matters here since a large spec book means dozens
 // of AI calls per scan.
-export const AI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6-terra";
+//
+// Uses || rather than ?? on purpose: a blank OPENAI_MODEL= line in
+// .env.local reads as an empty string, not undefined, and an empty string
+// is falsy so || still falls back correctly (?? would not — same bug this
+// project already hit once with RESEND_FROM_EMAIL).
+export const AI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6-terra";
