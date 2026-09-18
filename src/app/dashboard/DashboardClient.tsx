@@ -194,12 +194,11 @@ function NewSubmittalModal({ onClose }: { onClose: () => void }) {
           <Field label="Reviewer email" name="reviewerEmail" type="email" />
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
-              File (PDF/DOCX)
+              File
             </label>
             <input
               name="file"
               type="file"
-              accept=".pdf,.doc,.docx"
               className="w-full text-sm"
             />
           </div>
@@ -457,14 +456,9 @@ function EditDetailsForm({
       />
       <div>
         <label className="mb-1 block text-sm font-medium text-gray-700">
-          {submittal.file_path ? "Replace file" : "Attach a file"} (PDF/DOCX)
+          {submittal.file_path ? "Replace file" : "Attach a file"}
         </label>
-        <input
-          name="file"
-          type="file"
-          accept=".pdf,.doc,.docx"
-          className="w-full text-sm"
-        />
+        <input name="file" type="file" className="w-full text-sm" />
         {submittal.file_path && (
           <p className="mt-1 text-xs text-gray-400">
             Leave this blank to keep the current file.
