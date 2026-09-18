@@ -193,9 +193,10 @@ This step was rebuilt around that instead.
 1. **Run the new migration.** Open `supabase/migrations/0004_spec_books.sql`
    and run its contents in Supabase's SQL Editor, the same way you did for
    the earlier migrations — this step won't work until that table exists.
-2. If you haven't already, create an API key at **console.anthropic.com**
-   and add it to `.env.local` as `ANTHROPIC_API_KEY=sk-ant-...`, then
-   restart `npm run dev`.
+2. If you haven't already, create an API key at **platform.openai.com**
+   (separate from a regular ChatGPT login — it needs its own billing set
+   up) and add it to `.env.local` as `OPENAI_API_KEY=sk-...`, then restart
+   `npm run dev`.
 3. Click **Specifications** in the nav, upload a real project spec book,
    and give it a minute or two — the page should show "Scanning..." and
    then fill in on its own once it's done.
@@ -207,6 +208,13 @@ This step was rebuilt around that instead.
 5. Try a document that's a scanned image with no selectable text (if you
    have one handy) — it should show a clear "failed" message rather than
    silently doing nothing.
+
+**Update:** every AI feature (the Specifications registry above and the
+per-submittal Q&A box) now runs on **OpenAI** instead of Anthropic — you
+already have an OpenAI account, so this avoids needing two separate AI
+providers set up. `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` in `.env.local` no
+longer do anything; swap them for `OPENAI_API_KEY`/`OPENAI_MODEL` per the
+updated `.env.local.example`.
 
 ## Step 5 — Full split-screen AI Specification Analysis Portal — largely absorbed by Step 4
 

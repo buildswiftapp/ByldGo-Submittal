@@ -4,15 +4,17 @@
 // cite "Section 03 30 00" instead of just a page number.
 //
 // How it works: pages are grouped into overlapping windows and handed to
-// Claude, which is asked to point out where each new spec SECTION begins
-// (its CSI code, title, and starting page) — regex alone is too fragile
-// against how differently real spec books are formatted (OCR noise, page
+// AI, which is asked to point out where each new spec SECTION begins (its
+// CSI code, title, and starting page) — regex alone is too fragile against
+// how differently real spec books are formatted (OCR noise, page
 // headers/footers, inconsistent heading styles). If detection doesn't turn
 // up enough boundaries to be useful (a non-paginated .docx, or a PDF whose
 // formatting the model can't parse), this falls back to fixed-size page
 // blocks so the registry still gets built either way.
 
-import { anthropic, AI_MODEL } from "./anthropic";
+import { z } from "zod";
+import { zodResponseFormat } from "openai/helpers/zod";
+import { openai, AI_MODEL } from "./openai";
 import type { DocChunk } from "./extract";
 
 export type SpecSection = {
@@ -49,7 +51,7 @@ export async function segmentIntoSections(
   }
 
   let boundaries: Boundary[] = [];
-  if (anthropic) {
+  if (openai) {
     try {
       boundaries = await detectBoundaries(pages, onProgress);
     } catch {
@@ -113,61 +115,43 @@ async function detectBoundaries(
   return all;
 }
 
-async function detectBoundariesInWindow(windowText: string): Promise<Boundary[]> {
-  if (!anthropic) return [];
+const BoundariesSchema = z.object({
+  sections: z.array(
+    z.object({
+      code: z
+        .string()
+        .nullable()
+        .describe("CSI MasterFormat code, e.g. '03 30 00', or null if none is printed"),
+      title: z.string().nullable().describe("Section title, e.g. 'CAST-IN-PLACE CONCRETE'"),
+      startPage: z.number().int().describe("The page number this section begins on"),
+    })
+  ),
+});
 
-  const response = await anthropic.messages.create({
+async function detectBoundariesInWindow(windowText: string): Promise<Boundary[]> {
+  if (!openai) return [];
+
+  const completion = await openai.chat.completions.parse({
     model: AI_MODEL,
-    max_tokens: 2048,
-    system:
-      'You are analyzing pages from a construction specification book. Each page is marked with [Page N]. Find every place a new CSI MasterFormat specification SECTION begins (for example "SECTION 03 30 00" or "03 30 00 - CAST-IN-PLACE CONCRETE") — actual section headings that begin a section\'s content, not divisions, not subsections, and not table-of-contents entries. For each one, report its CSI code if printed (like "03 30 00"), its title, and the page number it starts on. If a section clearly began on a page before this excerpt, don\'t report it again — only report sections that BEGIN within this excerpt.',
-    messages: [{ role: "user", content: windowText }],
-    tools: [
+    messages: [
       {
-        name: "record_sections",
-        description: "Record the specification sections found in this excerpt.",
-        input_schema: {
-          type: "object",
-          properties: {
-            sections: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  code: {
-                    type: ["string", "null"],
-                    description: "CSI MasterFormat code, e.g. '03 30 00', or null if none is printed",
-                  },
-                  title: {
-                    type: ["string", "null"],
-                    description: "Section title, e.g. 'CAST-IN-PLACE CONCRETE'",
-                  },
-                  startPage: {
-                    type: "integer",
-                    description: "The page number this section begins on",
-                  },
-                },
-                required: ["startPage"],
-              },
-            },
-          },
-          required: ["sections"],
-        },
+        role: "system",
+        content:
+          'You are analyzing pages from a construction specification book. Each page is marked with [Page N]. Find every place a new CSI MasterFormat specification SECTION begins (for example "SECTION 03 30 00" or "03 30 00 - CAST-IN-PLACE CONCRETE") — actual section headings that begin a section\'s content, not divisions, not subsections, and not table-of-contents entries. For each one, report its CSI code if printed (like "03 30 00"), its title, and the page number it starts on. If a section clearly began on a page before this excerpt, don\'t report it again — only report sections that BEGIN within this excerpt.',
       },
+      { role: "user", content: windowText },
     ],
-    tool_choice: { type: "tool", name: "record_sections" },
+    response_format: zodResponseFormat(BoundariesSchema, "record_sections"),
   });
 
-  const toolUse = response.content.find((b) => b.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") return [];
+  const parsed = completion.choices[0]?.message.parsed;
+  if (!parsed) return [];
 
-  const input = toolUse.input as {
-    sections?: Array<{ code?: string | null; title?: string | null; startPage: number }>;
-  };
-
-  return (input.sections ?? [])
-    .filter((s) => typeof s.startPage === "number")
-    .map((s) => ({ code: s.code ?? null, title: s.title ?? null, startPage: s.startPage }));
+  return parsed.sections.map((s) => ({
+    code: s.code,
+    title: s.title,
+    startPage: s.startPage,
+  }));
 }
 
 function buildSectionsFromBoundaries(

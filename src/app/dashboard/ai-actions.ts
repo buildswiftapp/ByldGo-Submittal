@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { anthropic, AI_MODEL } from "@/lib/ai/anthropic";
+import { openai, AI_MODEL } from "@/lib/ai/openai";
 import { extractChunks } from "@/lib/ai/extract";
 import { retrieveRelevantChunks } from "@/lib/ai/retrieve";
 
@@ -21,10 +21,10 @@ export async function querySpecAI(
   _prevState: SpecQAState,
   formData: FormData
 ): Promise<SpecQAState> {
-  if (!anthropic) {
+  if (!openai) {
     return {
       error:
-        "AI analysis isn't set up yet — add ANTHROPIC_API_KEY to .env.local and restart the app.",
+        "AI analysis isn't set up yet — add OPENAI_API_KEY to .env.local and restart the app.",
     };
   }
 
@@ -95,12 +95,14 @@ export async function querySpecAI(
     .join("\n\n");
 
   try {
-    const response = await anthropic.messages.create({
+    const completion = await openai.chat.completions.create({
       model: AI_MODEL,
-      max_tokens: 1024,
-      system:
-        "You are a construction-spec assistant. You are given EXCERPTS from a specification document, not the whole thing — each excerpt is labeled with the page or section it came from. Answer the user's question using ONLY the excerpts provided. Respond as a concise bulleted list. After each bullet, cite the source label(s) it came from in parentheses, e.g. (Page 12). If the excerpts don't contain enough information to answer confidently, say so plainly rather than guessing.",
       messages: [
+        {
+          role: "system",
+          content:
+            "You are a construction-spec assistant. You are given EXCERPTS from a specification document, not the whole thing — each excerpt is labeled with the page or section it came from. Answer the user's question using ONLY the excerpts provided. Respond as a concise bulleted list. After each bullet, cite the source label(s) it came from in parentheses, e.g. (Page 12). If the excerpts don't contain enough information to answer confidently, say so plainly rather than guessing.",
+        },
         {
           role: "user",
           content: `Specification excerpts:\n\n${context}\n\nQuestion: ${query}`,
@@ -108,11 +110,7 @@ export async function querySpecAI(
       ],
     });
 
-    const answer = response.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n")
-      .trim();
+    const answer = (completion.choices[0]?.message.content ?? "").trim();
 
     return {
       success: true,
