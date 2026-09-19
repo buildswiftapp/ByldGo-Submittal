@@ -7,6 +7,8 @@ import {
   createSubmittalFromRequirement,
   createSubmittalsFromRequirements,
   deleteSpecBook,
+  getSpecSectionText,
+  type SpecSectionTextResult,
 } from "../actions";
 
 export type SpecBookDetail = {
@@ -28,6 +30,10 @@ export type SpecRequirement = {
   description: string;
   source_label: string;
   submittal_id: string | null;
+  // Points at the spec_sections row holding this requirement's full source
+  // text. Null for requirements from a spec book scanned before source
+  // text saving was added — those only ever get the citation label.
+  section_id: string | null;
 };
 
 // Two requirements count as "the same" if their wording only differs by
@@ -131,6 +137,14 @@ export default function RegistryClient({
     });
   }
 
+  // Which requirement's source text is currently showing in the slide-in
+  // panel, if any. Kept as the section id + a fallback label (the citation)
+  // rather than the whole requirement, since that's all the panel needs.
+  const [viewingSource, setViewingSource] = useState<{
+    sectionId: string | null;
+    sourceLabel: string;
+  } | null>(null);
+
   return (
     <div>
       <div className="mb-6 flex items-start justify-between">
@@ -213,6 +227,9 @@ export default function RegistryClient({
                             onToggleSelected={() =>
                               toggleSelected(group.primary.id)
                             }
+                            onViewSource={(sectionId, sourceLabel) =>
+                              setViewingSource({ sectionId, sourceLabel })
+                            }
                           />
                         ))}
                       </tbody>
@@ -223,6 +240,14 @@ export default function RegistryClient({
             </>
           )}
         </>
+      )}
+
+      {viewingSource && (
+        <SourceTextPanel
+          sectionId={viewingSource.sectionId}
+          sourceLabel={viewingSource.sourceLabel}
+          onClose={() => setViewingSource(null)}
+        />
       )}
     </div>
   );
@@ -429,10 +454,12 @@ function RequirementGroupRow({
   group,
   selected,
   onToggleSelected,
+  onViewSource,
 }: {
   group: RequirementGroup;
   selected: boolean;
   onToggleSelected: () => void;
+  onViewSource: (sectionId: string | null, sourceLabel: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasDuplicates = group.occurrences.length > 1;
@@ -461,6 +488,15 @@ function RequirementGroupRow({
         </td>
         <td className="px-4 py-3 align-top text-xs text-gray-500">
           {group.primary.source_label}
+          <button
+            type="button"
+            onClick={() =>
+              onViewSource(group.primary.section_id, group.primary.source_label)
+            }
+            className="mt-1 block font-medium text-blue-600 hover:underline"
+          >
+            View source text →
+          </button>
           {hasDuplicates && (
             <button
               onClick={() => setExpanded((v) => !v)}
@@ -487,6 +523,13 @@ function RequirementGroupRow({
             </td>
             <td className="px-4 py-2 align-top text-xs text-gray-500">
               {occ.source_label}
+              <button
+                type="button"
+                onClick={() => onViewSource(occ.section_id, occ.source_label)}
+                className="mt-1 block font-medium text-blue-600 hover:underline"
+              >
+                View source text →
+              </button>
             </td>
             <td className="px-4 py-2 align-top text-right">
               <RequirementActionCell requirement={occ} compact />
@@ -547,5 +590,77 @@ function RequirementActionCell({
         <p className="mt-1 text-xs text-red-600">{state.error}</p>
       )}
     </>
+  );
+}
+
+// Slide-in panel showing a requirement's real source text (the full spec
+// section it came from), not just the "Section X, p.Y" citation. Fetches
+// on demand rather than the page loading every section's text up front —
+// a big spec book can have well over a hundred sections, most of which
+// nobody will ever open.
+function SourceTextPanel({
+  sectionId,
+  sourceLabel,
+  onClose,
+}: {
+  sectionId: string | null;
+  sourceLabel: string;
+  onClose: () => void;
+}) {
+  const [result, setResult] = useState<SpecSectionTextResult | null>(null);
+  const [resultForSectionId, setResultForSectionId] = useState<string | null>(null);
+
+  // Same "adjust state during render" pattern used for the stale-file-URL
+  // fix in DashboardClient: clearing the previous section's result when
+  // sectionId changes has to happen during render, not as a synchronous
+  // setState inside the effect below — that's the set-state-in-effect
+  // trap hit a few times already in this app.
+  if (resultForSectionId !== sectionId) {
+    setResultForSectionId(sectionId);
+    setResult(null);
+  }
+
+  // The fetch itself IS a safe effect — the setState here happens inside
+  // the promise's .then() callback, not synchronously in the effect body.
+  useEffect(() => {
+    let cancelled = false;
+    getSpecSectionText(sectionId).then((r) => {
+      if (!cancelled) setResult(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sectionId]);
+
+  return (
+    <div className="fixed inset-y-0 right-0 z-20 w-full max-w-xl overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-xl">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">
+            {result && "success" in result ? result.label : "Source text"}
+          </h2>
+          <p className="mt-0.5 text-xs text-gray-400">{sourceLabel}</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      {!result && <p className="text-sm text-gray-400">Loading source text...</p>}
+
+      {result && "error" in result && (
+        <p className="text-sm text-amber-700">{result.error}</p>
+      )}
+
+      {result && "success" in result && (
+        <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-700">
+          {result.text}
+        </pre>
+      )}
+    </div>
   );
 }

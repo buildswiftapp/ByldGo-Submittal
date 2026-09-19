@@ -43,7 +43,7 @@ export default async function SpecBookPage({
   const { data: requirements } = await supabase
     .from("spec_requirements")
     .select(
-      "id, spec_book_id, division_code, division_title, description, source_label, submittal_id"
+      "id, spec_book_id, division_code, division_title, description, source_label, submittal_id, section_id"
     )
     .eq("spec_book_id", id)
     .order("division_code", { ascending: true, nullsFirst: false });

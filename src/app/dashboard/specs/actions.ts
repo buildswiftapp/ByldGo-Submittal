@@ -12,6 +12,7 @@ import { mapWithConcurrency } from "@/lib/ai/concurrency";
 
 const BUCKET = "spec-books";
 const EXTRACTION_CONCURRENCY = 3;
+const SECTION_SAVE_CONCURRENCY = 5;
 
 export type UploadSpecBookState = { error: string } | null;
 
@@ -127,6 +128,41 @@ async function processSpecBook(
       setProgress("Finding spec sections...", current, total)
     );
 
+    // Saves each section's full text before extraction runs, so a registry
+    // row can later show you the real source text next to the requirement
+    // — not just a page citation. One row per section (not per
+    // requirement), since several requirements typically share a section.
+    // Inserted one at a time (through a small worker pool) rather than as
+    // one multi-row insert, specifically so each section's database id can
+    // be matched back to its position in `sections` with certainty —
+    // Postgres doesn't guarantee a multi-row INSERT...RETURNING preserves
+    // input order, and that order is what ties requirements back to the
+    // right section below.
+    await setProgress("Saving spec sections...", 0, sections.length);
+    const sectionIds = await mapWithConcurrency(
+      sections,
+      SECTION_SAVE_CONCURRENCY,
+      async (section) => {
+        const { data, error } = await admin
+          .from("spec_sections")
+          .insert({
+            spec_book_id: specBookId,
+            account_id: accountId,
+            code: section.code,
+            title: section.title,
+            label: section.label,
+            text: section.text,
+          })
+          .select("id")
+          .single();
+        // A single section failing to save shouldn't fail the whole scan —
+        // its requirements just won't have source text to show.
+        return error || !data ? null : (data.id as string);
+      },
+      (completedCount, total) =>
+        setProgress("Saving spec sections...", completedCount, total)
+    );
+
     await setProgress("Extracting requirements...", 0, sections.length);
     const itemsPerSection = await mapWithConcurrency(
       sections,
@@ -136,14 +172,17 @@ async function processSpecBook(
         setProgress("Extracting requirements...", completedCount, total)
     );
 
-    const rows = itemsPerSection.flat().map((item) => ({
-      spec_book_id: specBookId,
-      account_id: accountId,
-      division_code: item.divisionCode,
-      division_title: item.divisionTitle,
-      description: item.description,
-      source_label: item.sourceLabel,
-    }));
+    const rows = itemsPerSection.flatMap((items, i) =>
+      items.map((item) => ({
+        spec_book_id: specBookId,
+        account_id: accountId,
+        division_code: item.divisionCode,
+        division_title: item.divisionTitle,
+        description: item.description,
+        source_label: item.sourceLabel,
+        section_id: sectionIds[i],
+      }))
+    );
 
     if (rows.length > 0) {
       const { error: insertRowsError } = await admin.from("spec_requirements").insert(rows);
@@ -242,6 +281,58 @@ export async function createSubmittalFromRequirement(
   revalidatePath("/dashboard");
 
   return { success: true, submittalId: submittal.id };
+}
+
+export type SpecSectionTextResult =
+  | { success: true; label: string; text: string }
+  | { error: string };
+
+// Fetches a section's full saved text so a registry row can show its real
+// source text next to it, instead of just the citation label. This is
+// called directly from a button click on the client (not through a
+// <form>/useActionState) since it's an on-demand read, not a submission —
+// Server Actions can be called like a plain async function from a Client
+// Component just as easily as from a <form action={...}>.
+//
+// Returns an error for a null sectionId, or for a requirement whose spec
+// book was scanned before this feature existed (those never got their
+// sections saved, so there's nothing to show).
+export async function getSpecSectionText(
+  sectionId: string | null
+): Promise<SpecSectionTextResult> {
+  if (!sectionId) {
+    return {
+      error:
+        "No source text saved for this item — it came from a spec book scanned before this feature was added. Re-scanning that spec book will save source text going forward.",
+    };
+  }
+
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { data: account } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("owner_user_id", user.id)
+    .single();
+  if (!account) return { error: "No account found for this user." };
+
+  const { data: section, error } = await supabase
+    .from("spec_sections")
+    .select("label, text")
+    .eq("id", sectionId)
+    .eq("account_id", account.id)
+    .single();
+
+  if (error || !section) {
+    return { error: "Couldn't find that section's source text." };
+  }
+
+  return { success: true, label: section.label, text: section.text };
 }
 
 export type BulkCreateSubmittalsState =

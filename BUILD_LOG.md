@@ -275,12 +275,33 @@ reason to limit it).
   field is happy with something that isn't on the list at all; the list is
   just there to save typing on the common cases.
 
-## Step 5 — Full split-screen AI Specification Analysis Portal — largely absorbed by Step 4
+## Step 5 — Full split-screen AI Specification Analysis Portal ✅ done
 
 The original idea for Step 5 (a portal for browsing a spec section-by-
-section) is now mostly covered by the Specifications registry built in
-Step 4. What's left here, if wanted later, is a way to open a registry
-item and read its full source section text side-by-side — not started.
+section) turned out to be mostly covered by the Specifications registry
+built in Step 4. The one piece that was still missing — opening a
+registry item and reading its actual source text, not just a page
+citation — is now in.
+
+- **"View source text" on every registry row.** Each requirement in the
+  Specifications registry now has a "View source text" link. Clicking it
+  slides open a panel on the right showing the real wording from the spec
+  book — the actual section the AI read to find that requirement — instead
+  of just a citation like "Section 03 30 00, p. 42". Duplicate/collapsed
+  rows can each show their own source, since near-identical requirements
+  sometimes come from different sections.
+- **Spec sections are now saved permanently.** Up to now, the AI read each
+  section of a spec book to pull out requirements, but threw away the
+  section's actual text right after — only the short requirement
+  description was kept. A new database table now saves each section's
+  full text (once per section, not copied onto every requirement), which
+  is what makes the "View source text" panel possible.
+- **Important — only applies going forward.** This needs a small database
+  update (see below), and even after that, only spec books you scan
+  *after* running it will have source text available. Spec books you've
+  already scanned won't have it retroactively — re-scan one if you want
+  to see its source text (the requirements it already created stay put
+  either way).
 
 ## Step 6 — Spec revision versioning & change-impact analysis — not started
 
